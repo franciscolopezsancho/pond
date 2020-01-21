@@ -1,13 +1,13 @@
 package com.lightbend.pond.api
 
-import akka.{Done, NotUsed}
 import com.lightbend.lagom.scaladsl.api.broker.Topic
 import com.lightbend.lagom.scaladsl.api.broker.kafka.{KafkaProperties, PartitionKeyStrategy}
+import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Descriptor, Service, ServiceCall}
 import play.api.libs.json.{Format, Json}
 
-object PondService  {
-  val TOPIC_NAME = "greetings"
+object PondService {
+  val TOPIC_NAME = "restaurant-orders"
 }
 
 /**
@@ -18,33 +18,16 @@ object PondService  {
   */
 trait PondService extends Service {
 
-  /**
-    * Example: curl http://localhost:9000/api/hello/Alice
-    */
-  def hello(id: String): ServiceCall[NotUsed, String]
-
-  /**
-    * Example: curl -H "Content-Type: application/json" -X POST -d '{"message":
-    * "Hi"}' http://localhost:9000/api/hello/Alice
-    */
-  def useGreeting(id: String): ServiceCall[GreetingMessage, Done]
-
-
-  /**
-    * This gets published to Kafka.
-    */
-  def greetingsTopic(): Topic[GreetingMessageChanged]
-
   override final def descriptor: Descriptor = {
     import Service._
     // @formatter:off
     named("pond")
       .withCalls(
-        pathCall("/api/hello/:id", hello _),
-        pathCall("/api/hello/:id", useGreeting _)
+        restCall(Method.GET, "/api/order/:id", getOrder _),
+        restCall(Method.POST, "/api/order/:id", createOrder _)
       )
       .withTopics(
-        topic(PondService.TOPIC_NAME, greetingsTopic _)
+        topic(PondService.TOPIC_NAME, ordersTopic _)
           // Kafka partitions messages, messages within the same partition will
           // be delivered in order, to ensure that all messages for the same user
           // go to the same partition (and hence are delivered in order with respect
@@ -52,41 +35,55 @@ trait PondService extends Service {
           // name as the partition key.
           .addProperty(
             KafkaProperties.partitionKeyStrategy,
-            PartitionKeyStrategy[GreetingMessageChanged](_.name)
+            PartitionKeyStrategy[OrderResponse](_.tableId)
           )
       )
       .withAutoAcl(true)
     // @formatter:on
   }
-}
 
-/**
-  * The greeting message class.
-  */
-case class GreetingMessage(message: String)
 
-object GreetingMessage {
   /**
-    * Format for converting greeting messages to and from JSON.
-    *
-    * This will be picked up by a Lagom implicit conversion from Play's JSON format to Lagom's message serializer.
+    * Example: curl -H "Content-Type: application/json" -X POST -d '{"message":
+    * "Hi"}' http://localhost:9000/api/hello/Alice
     */
-  implicit val format: Format[GreetingMessage] = Json.format[GreetingMessage]
-}
+  def createOrder(id: String): ServiceCall[OrderRequest, OrderResponse]
 
 
-
-/**
-  * The greeting message class used by the topic stream.
-  * Different than [[GreetingMessage]], this message includes the name (id).
-  */
-case class GreetingMessageChanged(name: String, message: String)
-
-object GreetingMessageChanged {
   /**
-    * Format for converting greeting messages to and from JSON.
-    *
-    * This will be picked up by a Lagom implicit conversion from Play's JSON format to Lagom's message serializer.
+    * Example: curl -H "Content-Type: application/json" -X POST -d '{"message":
+    * "Hi"}' http://localhost:9000/api/hello/Alice
     */
-  implicit val format: Format[GreetingMessageChanged] = Json.format[GreetingMessageChanged]
+  def getOrder(id: String): ServiceCall[String, OrderResponse]
+
+  /**
+    * This gets published to Kafka.
+    */
+  def ordersTopic(): Topic[OrderResponse]
+
+
 }
+
+case class OrderRequest(tableId: String, serverId: String, items: Seq[ItemRequest])
+
+object OrderRequest {
+  implicit val format: Format[OrderRequest] = Json.format[OrderRequest]
+
+}
+
+case class ItemRequest(name: String, specialInstructions: String)
+
+object ItemRequest {
+  implicit val format: Format[ItemRequest] = Json.format[ItemRequest]
+
+}
+
+case class OrderResponse(id: String, tableId: String, serverId: String, items: Seq[ItemRequest])
+
+object OrderResponse {
+  implicit val format: Format[OrderResponse] = Json.format[OrderResponse]
+
+}
+
+
+

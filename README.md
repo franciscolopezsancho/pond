@@ -13,3 +13,7 @@ retrieve order (order id)
 
 / read model 
 give me all orders
+
+https://www.lagomframework.com/documentation/1.6.x/scala/UsingAkkaPersistenceTyped.html
+
+https://www.lagomframework.com/documentation/1.6.x/scala/PersistentEntity.html

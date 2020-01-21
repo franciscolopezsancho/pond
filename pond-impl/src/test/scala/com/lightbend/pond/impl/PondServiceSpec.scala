@@ -34,5 +34,14 @@ class PondServiceSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll
         answer should ===("Hi, Bob!")
       }
     }
+
+    "allow create Order" in {
+      for {
+        _ <- client.createOrder.invoke(Order("tableId","serverId"))
+        answer <- client.hello("Bob").invoke()
+      } yield {
+        answer should ===("Hi, Bob!")
+      }
+    }
   }
 }

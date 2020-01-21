@@ -1,30 +1,53 @@
 package com.lightbend.pond.impl
 
-import com.lightbend.pond.api
-import com.lightbend.pond.api.PondService
-import akka.Done
-import akka.NotUsed
-import akka.cluster.sharding.typed.scaladsl.ClusterSharding
-import akka.cluster.sharding.typed.scaladsl.EntityRef
+import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, EntityRef}
+import akka.util.Timeout
 import com.lightbend.lagom.scaladsl.api.ServiceCall
 import com.lightbend.lagom.scaladsl.api.broker.Topic
+import com.lightbend.lagom.scaladsl.api.transport.BadRequest
 import com.lightbend.lagom.scaladsl.broker.TopicProducer
-import com.lightbend.lagom.scaladsl.persistence.EventStreamElement
-import com.lightbend.lagom.scaladsl.persistence.PersistentEntityRegistry
+import com.lightbend.lagom.scaladsl.persistence.{EventStreamElement, PersistentEntityRegistry}
+import com.lightbend.pond.api._
+import com.lightbend.pond.impl.PondState._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import akka.util.Timeout
-import com.lightbend.lagom.scaladsl.api.transport.BadRequest
 
 /**
   * Implementation of the PondService.
   */
 class PondServiceImpl(
-  clusterSharding: ClusterSharding,
-  persistentEntityRegistry: PersistentEntityRegistry
-)(implicit ec: ExecutionContext)
+                       clusterSharding: ClusterSharding,
+                       persistentEntityRegistry: PersistentEntityRegistry
+                     )(implicit ec: ExecutionContext)
   extends PondService {
+
+  implicit val timeout = Timeout(5.seconds)
+
+  override def createOrder(id: String): ServiceCall[OrderRequest, OrderResponse] = ServiceCall { order =>
+    entityRef(id)
+      .ask(reply =>
+        CreateOrder(order.serverId, order.tableId, order.items.map(item => Item(item.name, item.specialInstructions)), reply))
+      .map(confirmation => confirmationToResult(id, confirmation))
+  }
+
+  def confirmationToResult(id: String, confirmation: Confirmation): OrderResponse = {
+    println("I'm confirming!!")
+    confirmation match {
+      case Accepted(cartSummary) => OrderResponse(id, cartSummary.serverId, cartSummary.tableId, cartSummary.items.map(i => ItemRequest(i.name, i.specialInstructions)))
+      case Rejected(reason) => throw BadRequest(reason)
+    }
+  }
+
+
+  override def getOrder(id: String) = ServiceCall { request =>
+    // Look up the sharded entity (aka the aggregate instance) for the given ID.
+    entityRef(id)
+      .ask(
+        replyTo => GetOrder(replyTo)
+      ).map(cartSummary => convertShoppingCart(id, cartSummary))
+
+  }
 
   /**
     * Looks up the entity for the given ID.
@@ -32,47 +55,25 @@ class PondServiceImpl(
   private def entityRef(id: String): EntityRef[PondCommand] =
     clusterSharding.entityRefFor(PondState.typeKey, id)
 
-  implicit val timeout = Timeout(5.seconds)
-
-  override def hello(id: String): ServiceCall[NotUsed, String] = ServiceCall {
-    _ =>
-      // Look up the sharded entity (aka the aggregate instance) for the given ID.
-      val ref = entityRef(id)
-
-      // Ask the aggregate instance the Hello command.
-      ref
-        .ask[Greeting](replyTo => Hello(id, replyTo))
-        .map(greeting => greeting.message)
+  private def convertShoppingCart(id: String, cartSummary: Summary) = {
+    OrderResponse(
+      id,
+      cartSummary.serverId,
+      cartSummary.tableId,
+      cartSummary.items.map { item => ItemRequest(item.name, item.specialInstructions) }
+    )
   }
 
-  override def useGreeting(id: String) = ServiceCall { request =>
-    // Look up the sharded entity (aka the aggregate instance) for the given ID.
-    val ref = entityRef(id)
-
-    // Tell the aggregate to use the greeting message specified.
-    ref
-      .ask[Confirmation](
-        replyTo => UseGreetingMessage(request.message, replyTo)
-      )
-      .map {
-        case Accepted => Done
-        case _        => throw BadRequest("Can't upgrade the greeting message.")
-      }
-  }
-
-  override def greetingsTopic(): Topic[api.GreetingMessageChanged] =
+  //how this works???
+  override def ordersTopic(): Topic[OrderResponse] =
     TopicProducer.singleStreamWithOffset { fromOffset =>
       persistentEntityRegistry
         .eventStream(PondEvent.Tag, fromOffset)
-        .map(ev => (convertEvent(ev), ev.offset))
+        .mapAsync(4) {
+          case EventStreamElement(id, _, offset) =>
+            entityRef(id)
+              .ask(reply => GetOrder(reply))
+              .map(ev => (convertShoppingCart(id, ev), offset))
+        }
     }
-
-  private def convertEvent(
-    helloEvent: EventStreamElement[PondEvent]
-  ): api.GreetingMessageChanged = {
-    helloEvent.event match {
-      case GreetingMessageChanged(msg) =>
-        api.GreetingMessageChanged(helloEvent.entityId, msg)
-    }
-  }
 }
