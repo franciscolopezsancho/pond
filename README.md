@@ -17,3 +17,7 @@ give me all orders
 https://www.lagomframework.com/documentation/1.6.x/scala/UsingAkkaPersistenceTyped.html
 
 https://www.lagomframework.com/documentation/1.6.x/scala/PersistentEntity.html
+
+
+testable it with: 
+`curl -H "Content-Type: application/json" -X POST -d '{"serverId":"s1", "tableId":"t1", "items":[{"name":"name1","specialInstructions":"isnt1"}]}' http://localhost:9000/api/order/123`
