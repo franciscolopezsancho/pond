@@ -39,6 +39,11 @@ class PondServiceImpl(
     }
   }
 
+  /**
+    * Looks up the entity for the given ID.
+    */
+  private def entityRef(id: String): EntityRef[PondCommand] =
+    clusterSharding.entityRefFor(PondState.typeKey, id)
 
   override def getOrder(id: String) = ServiceCall { request =>
     // Look up the sharded entity (aka the aggregate instance) for the given ID.
@@ -48,12 +53,6 @@ class PondServiceImpl(
       ).map(cartSummary => convertShoppingCart(id, cartSummary))
 
   }
-
-  /**
-    * Looks up the entity for the given ID.
-    */
-  private def entityRef(id: String): EntityRef[PondCommand] =
-    clusterSharding.entityRefFor(PondState.typeKey, id)
 
   private def convertShoppingCart(id: String, cartSummary: Summary) = {
     OrderResponse(
@@ -65,15 +64,17 @@ class PondServiceImpl(
   }
 
   //how this works???
-  override def ordersTopic(): Topic[OrderResponse] =
+  override def ordersTopic(): Topic[ExternalPondEvent] =
     TopicProducer.singleStreamWithOffset { fromOffset =>
       persistentEntityRegistry
         .eventStream(PondEvent.Tag, fromOffset)
-        .mapAsync(4) {
-          case EventStreamElement(id, _, offset) =>
-            entityRef(id)
-              .ask(reply => GetOrder(reply))
-              .map(ev => (convertShoppingCart(id, ev), offset))
-        }
+        .map(ev => (convertEvent(ev), ev.offset))
     }
+
+  private def convertEvent(helloEvent: EventStreamElement[PondEvent]): ExternalPondEvent = {
+    helloEvent.event match {
+      case OrderCreated(serverId, tableId, items) => ExternalPondEvent(helloEvent.entityId, serverId, tableId, items.map( x => ItemRequest(x.name,x.specialInstructions)))
+    }
+  }
+
 }

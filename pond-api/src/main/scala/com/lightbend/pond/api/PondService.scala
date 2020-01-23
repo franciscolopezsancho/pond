@@ -18,6 +18,7 @@ object PondService {
   */
 trait PondService extends Service {
 
+
   override final def descriptor: Descriptor = {
     import Service._
     // @formatter:off
@@ -35,7 +36,7 @@ trait PondService extends Service {
           // name as the partition key.
           .addProperty(
             KafkaProperties.partitionKeyStrategy,
-            PartitionKeyStrategy[OrderResponse](_.tableId)
+            PartitionKeyStrategy[ExternalPondEvent](_.tableId)
           )
       )
       .withAutoAcl(true)
@@ -59,14 +60,23 @@ trait PondService extends Service {
   /**
     * This gets published to Kafka.
     */
-  def ordersTopic(): Topic[OrderResponse]
+  def ordersTopic(): Topic[ExternalPondEvent]
 
 
 }
 
+case class ExternalPondEvent(id: String, tableId: String, serverId: String, items: Seq[ItemRequest])
+
+object ExternalPondEvent {
+  implicit val format: Format[ExternalPondEvent] = Json.format[ExternalPondEvent]
+
+}
+
+
 case class OrderRequest(tableId: String, serverId: String, items: Seq[ItemRequest])
 
 object OrderRequest {
+
   implicit val format: Format[OrderRequest] = Json.format[OrderRequest]
 
 }

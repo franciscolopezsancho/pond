@@ -1,22 +1,14 @@
 package com.lightbend.pond.impl
 
-import play.api.libs.json.Json
-import play.api.libs.json.Format
-import java.time.LocalDateTime
-
-import akka.actor.typed.ActorRef
-import akka.actor.typed.Behavior
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.cluster.sharding.typed.scaladsl._
-import akka.persistence.typed.scaladsl.Effect.reply
 import akka.persistence.typed.PersistenceId
+import akka.persistence.typed.scaladsl.Effect.reply
 import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, ReplyEffect}
-import com.lightbend.lagom.scaladsl.persistence.AggregateEvent
-import com.lightbend.lagom.scaladsl.persistence.AggregateEventTag
-import com.lightbend.lagom.scaladsl.persistence.AkkaTaggerAdapter
-import com.lightbend.lagom.scaladsl.playjson.JsonSerializer
-import com.lightbend.lagom.scaladsl.playjson.JsonSerializerRegistry
+import com.lightbend.lagom.scaladsl.persistence.{AggregateEvent, AggregateEventTag, AkkaTaggerAdapter}
+import com.lightbend.lagom.scaladsl.playjson.{JsonSerializer, JsonSerializerRegistry}
 import com.lightbend.pond.impl.PondState.{Item, PondCommand}
-import play.api.libs.json._
+import play.api.libs.json.{Format, Json}
 
 import scala.collection.immutable.Seq
 
@@ -37,16 +29,17 @@ object PondBehavior {
       )
 
   }
+
   /*
    * This method is extracted to write unit tests that are completely independendant to Akka Cluster.
    */
   private[impl] def create(persistenceId: PersistenceId) = EventSourcedBehavior
-      .withEnforcedReplies[PondCommand, PondEvent, PondState](
-        persistenceId = persistenceId,
-        emptyState = PondState.initial,
-        commandHandler = (cart, cmd) => cart.applyCommand(cmd),
-        eventHandler = (cart, evt) => cart.applyEvent(evt)
-      )
+    .withEnforcedReplies[PondCommand, PondEvent, PondState](
+      persistenceId = persistenceId,
+      emptyState = PondState.initial,
+      commandHandler = (cart, cmd) => cart.applyCommand(cmd),
+      eventHandler = (cart, evt) => cart.applyEvent(evt)
+    )
 }
 
 /**
@@ -58,88 +51,43 @@ case class PondState(tableId: String, serverId: String, items: Seq[Item]) {
   import PondState._
 
 
-
   def applyCommand(cmd: PondCommand): ReplyEffect[PondEvent, PondState] =
     cmd match {
-      case x: CreateOrder => onCreateOrder(Order(x.tableId,x.serverId,Seq.empty[Item]),x.replyTo)
+      case x: CreateOrder => onCreateOrder(Order(x.tableId, x.serverId, Seq.empty[Item]), x.replyTo)
       case x: GetOrder => onGetOrder(x.replyTo)
     }
 
-  def updateMessage(order: OrderCreated): PondState =
-    copy(items = items ++ order.items)
-
-  def applyEvent(evt: PondEvent): PondState =
-    evt match {
-      case o: OrderCreated => updateMessage(o)
-    }
-
-
-
-  private def onCreateOrder(cmd:Order, replyTo: ActorRef[Confirmation]): ReplyEffect[PondEvent, PondState] = {
+  private def onCreateOrder(cmd: Order, replyTo: ActorRef[Confirmation]): ReplyEffect[PondEvent, PondState] = {
     println("persisting onCreateOrder")
     Effect
       .persist(toState(cmd))
       .thenReply(replyTo)(updatedCart => Accepted(toSummary(updatedCart)))
   }
 
+  private def toSummary(state: PondState): Summary =
+    Summary(state.tableId, state.serverId, state.items)
 
-  private def   onGetOrder(replyTo: ActorRef[Summary]): ReplyEffect[PondEvent,PondState] = {
+  private def toState(order: Order): OrderCreated =
+    OrderCreated(serverId = order.serverId, tableId = order.tableId, items = order.items ++ items)
+
+  private def onGetOrder(replyTo: ActorRef[Summary]): ReplyEffect[PondEvent, PondState] = {
     reply(replyTo)(toSummary(this))
   }
 
+  def applyEvent(evt: PondEvent): PondState =
+    evt match {
+      case o: OrderCreated => updateMessage(o)
+    }
 
-  private def toSummary(state: PondState): Summary =
-    Summary(state.tableId,state.serverId,state.items)
-
-
-  private def toState(order: Order): OrderCreated =
-    OrderCreated(serverId = order.serverId, tableId = order.tableId, items = order.items ++ items )
-
+  def updateMessage(order: OrderCreated): PondState =
+    copy(items = items ++ order.items)
 
 
 }
+
 trait PondCommandSerializable
 
 object PondState {
-
-
-  case class Order(tableId: String, serverId: String, items: Seq[Item])
-
-  case class Item(name: String, specialInstructions: String)
-
-  sealed trait Confirmation
-
-  final case class Accepted(summary: Summary) extends Confirmation
-
-  final case class Rejected(reason: String) extends Confirmation
-
-  final case class Summary(serverId: String, tableId: String, items: Seq[Item])
-
-
-  /**
-    * This interface defines all the commands that the PondAggregate supports.
-    */
-  sealed trait PondCommand
-    extends PondCommandSerializable
-    implicit val formatItem: Format[Item] = Json.format[Item]
-  implicit val confirmationItem: Format[Confirmation] = Json.format[Confirmation]
-  implicit val rejectedFormat: Format[Rejected] = Json.format[Rejected]
-  implicit val summaryItem: Format[Summary] = Json.format[Summary]
-  implicit val acceptedItem: Format[Accepted] = Json.format[Accepted]
-  implicit val formatOrder: Format[Order] = Json.format[Order]
-
-
-  final case class CreateOrder(serverId: String, tableId: String,items: Seq[Item], replyTo: ActorRef[Confirmation]) extends PondCommand
-
-  final case class GetOrder(replyTo: ActorRef[Summary])  extends PondCommand
-
-  final case class AddItem(itemId: String, quantity: String, replyto: ActorRef[Order]) extends PondCommand
-
-  /**
-    * The initial state. This is used if there is no snapshotted state to be found.
-    */
-  def initial: PondState = PondState("initial","initial",Seq.empty)
-
   /**
     * The [[EventSourcedBehavior]] instances (aka Aggregates) run on sharded actors inside the Akka Cluster.
     * When sharding actors and distributing them across the cluster, each aggregate is
@@ -147,6 +95,42 @@ object PondState {
     * that sharded actor can receive.
     */
   val typeKey = EntityTypeKey[PondCommand]("PondAggregate")
+
+  /**
+    * The initial state. This is used if there is no snapshotted state to be found.
+    */
+  def initial: PondState = PondState("initial", "initial", Seq.empty)
+
+  sealed trait Confirmation
+
+  /**
+    * This interface defines all the commands that the PondAggregate supports.
+    */
+  sealed trait PondCommand
+    extends PondCommandSerializable
+
+  case class Order(tableId: String, serverId: String, items: Seq[Item])
+
+  case class Item(name: String, specialInstructions: String)
+
+  final case class Accepted(summary: Summary) extends Confirmation
+
+  implicit val formatItem: Format[Item] = Json.format[Item]
+  implicit val confirmationItem: Format[Confirmation] = Json.format[Confirmation]
+  implicit val rejectedFormat: Format[Rejected] = Json.format[Rejected]
+  implicit val summaryItem: Format[Summary] = Json.format[Summary]
+  implicit val acceptedItem: Format[Accepted] = Json.format[Accepted]
+  implicit val formatOrder: Format[Order] = Json.format[Order]
+
+  final case class Rejected(reason: String) extends Confirmation
+
+  final case class Summary(serverId: String, tableId: String, items: Seq[Item])
+
+  final case class CreateOrder(serverId: String, tableId: String, items: Seq[Item], replyTo: ActorRef[Confirmation]) extends PondCommand
+
+  final case class GetOrder(replyTo: ActorRef[Summary]) extends PondCommand
+
+  final case class AddItem(itemId: String, quantity: String, replyto: ActorRef[Order]) extends PondCommand
 
   /**
     * Format for the hello state.
@@ -174,6 +158,7 @@ object PondEvent {
 
 case class OrderCreated(serverId: String, tableId: String, items: Seq[Item])
   extends PondEvent
+
 /**
   * This is a marker trait for commands.
   * We will serialize them using Akka's Jackson support that is able to deal with the replyTo field.
@@ -182,21 +167,12 @@ case class OrderCreated(serverId: String, tableId: String, items: Seq[Item])
 //TODO why this trait?
 
 
-
-
 /**
   * A command to switch the greeting message.
   *
   * It has a reply type of [[Confirmation]], which is sent back to the caller
   * when all the events emitted by this command are successfully persisted.
   */
-
-
-
-
-
-
-
 
 
 /**
