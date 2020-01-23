@@ -32,7 +32,7 @@ class PondServiceImpl(
   }
 
   def confirmationToResult(id: String, confirmation: Confirmation): OrderResponse = {
-    println("I'm confirming!!")
+    println(s"I'm confirming!! $confirmation")
     confirmation match {
       case Accepted(cartSummary) => OrderResponse(id, cartSummary.serverId, cartSummary.tableId, cartSummary.items.map(i => ItemRequest(i.name, i.specialInstructions)))
       case Rejected(reason) => throw BadRequest(reason)
