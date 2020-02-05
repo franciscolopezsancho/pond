@@ -20,4 +20,15 @@ https://www.lagomframework.com/documentation/1.6.x/scala/PersistentEntity.html
 
 
 testable it with: 
-`curl -H "Content-Type: application/json" -X POST -d '{"serverId":"s1", "tableId":"t1", "items":[{"name":"name1","specialInstructions":"isnt1"}]}' http://localhost:9000/api/order/123`
+
+to create order 
+
+    curl -H "Content-Type: application/json" -X POST -d '{"serverId":"s1", "tableId":"t1", "items":[{"name":"name1","specialInstructions":"isnt1","quantity":3}]}' http://localhost:9000/api/order/12345
+
+to add item
+    
+    curl -H "Content-Type: application/json" -X POST -d '{"serverId":"s1", "tableId":"t1", "items":[{"name":"name4","specialInstructions":"isnt4","quantity":4}]}' http://localhost:9000/api/order/12345/add
+    
+to get order
+
+    curl  -X GET http://localhost:9000/api/order/12345
