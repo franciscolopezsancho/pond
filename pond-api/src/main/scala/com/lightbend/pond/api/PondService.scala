@@ -25,7 +25,8 @@ trait PondService extends Service {
     named("pond")
       .withCalls(
         restCall(Method.GET, "/api/order/:id", getOrder _),
-        restCall(Method.POST, "/api/order/:id", createOrder _)
+        restCall(Method.POST, "/api/order/:id", createOrder _),
+          restCall(Method.POST, "/api/order/:id/add", addItem _)
       )
       .withTopics(
         topic(PondService.TOPIC_NAME, ordersTopic _)
@@ -36,7 +37,7 @@ trait PondService extends Service {
           // name as the partition key.
           .addProperty(
             KafkaProperties.partitionKeyStrategy,
-            PartitionKeyStrategy[ExternalPondEvent](_.tableId)
+            PartitionKeyStrategy[OrderResponse](_.id)
           )
       )
       .withAutoAcl(true)
@@ -51,6 +52,7 @@ trait PondService extends Service {
   def createOrder(id: String): ServiceCall[OrderRequest, OrderResponse]
 
 
+  def addItem(id: String): ServiceCall[ItemRequest, OrderResponse]
   /**
     * Example: curl -H "Content-Type: application/json" -X POST -d '{"message":
     * "Hi"}' http://localhost:9000/api/hello/Alice
@@ -60,15 +62,8 @@ trait PondService extends Service {
   /**
     * This gets published to Kafka.
     */
-  def ordersTopic(): Topic[ExternalPondEvent]
+  def ordersTopic(): Topic[OrderResponse]
 
-
-}
-
-case class ExternalPondEvent(id: String, tableId: String, serverId: String, items: Seq[ItemRequest])
-
-object ExternalPondEvent {
-  implicit val format: Format[ExternalPondEvent] = Json.format[ExternalPondEvent]
 
 }
 
@@ -81,7 +76,7 @@ object OrderRequest {
 
 }
 
-case class ItemRequest(name: String, specialInstructions: String)
+case class ItemRequest(name: String, specialInstructions: String, quantity: Int)
 
 object ItemRequest {
   implicit val format: Format[ItemRequest] = Json.format[ItemRequest]

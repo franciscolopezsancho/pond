@@ -7,6 +7,7 @@ import akka.persistence.typed.scaladsl.Effect.reply
 import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, ReplyEffect}
 import com.lightbend.lagom.scaladsl.persistence.{AggregateEvent, AggregateEventTag, AkkaTaggerAdapter}
 import com.lightbend.lagom.scaladsl.playjson.{JsonSerializer, JsonSerializerRegistry}
+import com.lightbend.pond.api.OrderResponse
 import com.lightbend.pond.impl.PondState.{Item, PondCommand}
 import play.api.libs.json.{Format, Json}
 
@@ -50,39 +51,66 @@ case class PondState(tableId: String, serverId: String, items: Seq[Item]) {
 
   import PondState._
 
+//########## Command
 
   def applyCommand(cmd: PondCommand): ReplyEffect[PondEvent, PondState] =
     cmd match {
-      case x: CreateOrder => onCreateOrder(Order(x.tableId, x.serverId, Seq.empty[Item]), x.replyTo)
+      case x: CreateOrder => onCreateOrder(Order(x.tableId, x.serverId, x.items), x.replyTo)
       case x: GetOrder => onGetOrder(x.replyTo)
+      case x: AddItem => onAddItems(Item(x.name, x.specialInstructions, x.quantity), x.replyTo)
     }
 
   private def onCreateOrder(cmd: Order, replyTo: ActorRef[Confirmation]): ReplyEffect[PondEvent, PondState] = {
-    println("persisting onCreateOrder")
+    println(s"persisting onCreateOrder $cmd")
     Effect
-      .persist(toState(cmd))
+      .persist(toOrderCreated(cmd))
       .thenReply(replyTo)(updatedCart => Accepted(toSummary(updatedCart)))
   }
 
-  private def toSummary(state: PondState): Summary =
-    Summary(state.tableId, state.serverId, state.items)
+  private def onAddItems(cmd: Item , replyTo: ActorRef[Confirmation]): ReplyEffect[PondEvent, PondState] = {
+    println(s"persisting onAddItem $cmd")
+    Effect
+      .persist(toAddItems(cmd))
+      .thenReply(replyTo)(updatedCart => Accepted(toSummary(updatedCart)))
+  }
 
-  private def toState(order: Order): OrderCreated =
+  private def toSummary(state: PondState): Summary = {
+    println(s"toSummary $state")
+    Summary(state.tableId, state.serverId, state.items)
+  }
+
+
+  private def toOrderCreated(order: Order): OrderCreated = {
+    println(s"toOrderCreated $order")
     OrderCreated(serverId = order.serverId, tableId = order.tableId, items = order.items ++ items)
+  }
+
+  private def toAddItems(item: Item): ItemAdded = {
+    println(s"toAddItems $item")
+    ItemAdded(item.name,item.specialInstructions,item.quantity)
+  }
 
   private def onGetOrder(replyTo: ActorRef[Summary]): ReplyEffect[PondEvent, PondState] = {
     reply(replyTo)(toSummary(this))
   }
-
+//######### EVENT
   def applyEvent(evt: PondEvent): PondState =
     evt match {
-      case o: OrderCreated => updateMessage(o)
+      case o: OrderCreated =>{
+        println(s"o $o")
+        updateMessage(o)
+      }
+      case o: ItemAdded =>{
+        println(s"o $o")
+        updateAddingItem(o)
+      }
     }
 
   def updateMessage(order: OrderCreated): PondState =
-    copy(items = items ++ order.items)
+    copy(serverId = order.serverId, tableId = order.tableId, items = items ++ order.items)
 
-
+  def updateAddingItem(item: ItemAdded): PondState =
+    copy(items = items :+ Item(item.name,item.specialInstructions, item.quantity))
 }
 
 trait PondCommandSerializable
@@ -111,7 +139,7 @@ object PondState {
 
   case class Order(tableId: String, serverId: String, items: Seq[Item])
 
-  case class Item(name: String, specialInstructions: String)
+  case class Item(name: String, specialInstructions: String, quantity: Int)
 
   final case class Accepted(summary: Summary) extends Confirmation
 
@@ -130,7 +158,7 @@ object PondState {
 
   final case class GetOrder(replyTo: ActorRef[Summary]) extends PondCommand
 
-  final case class AddItem(itemId: String, quantity: String, replyto: ActorRef[Order]) extends PondCommand
+  final case class AddItem(name: String, specialInstructions: String, quantity: Int, replyTo: ActorRef[Confirmation]) extends PondCommand
 
   /**
     * Format for the hello state.
@@ -159,6 +187,8 @@ object PondEvent {
 case class OrderCreated(serverId: String, tableId: String, items: Seq[Item])
   extends PondEvent
 
+case class ItemAdded(name: String, specialInstructions: String, quantity: Int)
+  extends PondEvent
 /**
   * This is a marker trait for commands.
   * We will serialize them using Akka's Jackson support that is able to deal with the replyTo field.
@@ -196,6 +226,8 @@ object PondSerializerRegistry extends JsonSerializerRegistry {
     JsonSerializer[Confirmation],
     JsonSerializer[Accepted],
     JsonSerializer[Rejected],
+    JsonSerializer[Item],
+
     // the replies use play-json as well
   )
 }
