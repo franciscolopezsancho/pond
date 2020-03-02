@@ -32,7 +32,7 @@ abstract class PondApplication(context: LagomApplicationContext)
     with AhcWSComponents {
 
   // Bind the service that this server provides
-  override lazy val lagomServer: LagomServer = serverFor[PondService](wire[PondServiceImpl])
+  override lazy val lagomServer: LagomServer = serverFor[PondService](wire[OrderServiceImpl])
 
   // Register the JSON serializer registry
   override lazy val jsonSerializerRegistry: JsonSerializerRegistry = PondSerializerRegistry
@@ -44,5 +44,9 @@ abstract class PondApplication(context: LagomApplicationContext)
       entityContext => PondBehavior.create(entityContext)
     )
   )
+
+  println(s"######TAAAAAAAGGG####### ${PondEvent.Tag.tag}")
+
+
 
 }

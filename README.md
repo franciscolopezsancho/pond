@@ -32,3 +32,8 @@ to add item
 to get order
 
     curl  -X GET http://localhost:9000/api/order/12345
+    
+    
+To read from the Journal, a `JournalReader` App is provided. The one in `pond-impl` works, but the one in `pound-journal-reader` doesn't.
+    
+       

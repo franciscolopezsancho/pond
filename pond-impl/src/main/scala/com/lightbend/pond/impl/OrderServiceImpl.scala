@@ -16,7 +16,7 @@ import scala.concurrent.duration._
 /**
   * Implementation of the PondService.
   */
-class PondServiceImpl(
+class OrderServiceImpl(
                        clusterSharding: ClusterSharding,
                        persistentEntityRegistry: PersistentEntityRegistry
                      )(implicit ec: ExecutionContext)
@@ -86,6 +86,8 @@ class PondServiceImpl(
               .map(cart => convertShoppingCart(id,cart) -> offset)
         }
     }
+
+
 
 
 }

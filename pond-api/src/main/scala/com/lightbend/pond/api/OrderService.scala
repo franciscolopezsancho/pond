@@ -66,7 +66,7 @@ trait PondService extends Service {
 
 
 }
-
+///use command names
 
 case class OrderRequest(tableId: String, serverId: String, items: Seq[ItemRequest])
 
@@ -83,12 +83,23 @@ object ItemRequest {
 
 }
 
+//event like name
+
 case class OrderResponse(id: String, tableId: String, serverId: String, items: Seq[ItemRequest])
 
 object OrderResponse {
   implicit val format: Format[OrderResponse] = Json.format[OrderResponse]
 
 }
+
+
+//TODO classes to domain naming
+
+
+//TODO create a read model and then to Akka
+
+
+//TODO replace PondService with gRPC
 
 
 
